@@ -1,14 +1,21 @@
+# Python Imports
+import os
+from dotenv import load_dotenv
+from pathlib import Path
+
+dotenv_path = Path('.env')
+load_dotenv(dotenv_path=dotenv_path)
 
 # SNOLAB Networks
-# SNOLAB_NETWORKS = ['10.10.0.0/16']
-# SNOLAB_NETWORKS = ['142.51.70.0/24']
-SNOLAB_NETWORKS = ['142.51.70.0/24', '142.51.71.0/24', '10.10.0.0/16']
+SNOLAB_NETWORKS = os.environ[f"SNOLAB_NETWORKS"].split(',')
 
+# CAs
 LETS_ENCRYPT = "Let's Encrypt"
 DIGI_CERT = "DigiCert Inc"
 
 # Email Configuration
 SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
-EMAIL_USERNAME = "muddin@snolab.ca"
-EMAIL_PASSWORD = "sayhellotomeSNOLAB!123"
+EMAIL_USERNAME = os.environ[f"EMAIL_USERNAME"]
+EMAIL_PASSWORD = os.environ[f"EMAIL_PASSWORD"]
+EMAIL_SENT_TO = os.environ["EMAIL_SENT_TO"]

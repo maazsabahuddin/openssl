@@ -29,6 +29,7 @@ class SSLConnection:
 
     networks = None
     port = 443
+    timeout = 1
     active_hosts = []
 
     def __init__(self, nws, port=443):
@@ -42,13 +43,10 @@ class SSLConnection:
         :return:
         """
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)  # Set a timeout for the connection attempt
-            result = sock.connect_ex((host, self.port))
-            if result == 0:
-                self.active_hosts.append(host)
-            sock.close()
-        except socket.error:
+            if socket.create_connection((host, self.port), timeout=self.timeout):
+                logger.info(f"Host: {host}")
+                self.active_hosts.append(str(host))
+        except (socket.error, socket.timeout, ConnectionRefusedError):
             pass
 
     @staticmethod
@@ -106,31 +104,6 @@ class SnolabNetwork:
     port = 443
     timeout = 0.1
     certificates_information = {}
-
-    def check_network_hosts(self, network_ip, subnet_mask, active_hosts):
-        """
-        This function will try to create connection with the host on the 443 port.
-        :param network_ip:
-        :param subnet_mask:
-        :param active_hosts:
-        :return:
-        """
-        network = network_ip + '/' + subnet_mask
-        inactive_hosts = []
-
-        logger.info(f"Fetch Network hosts: {network}")
-        for ip in ipaddress.IPv4Network(network):
-            host = str(ip)
-            try:
-                with socket.create_connection((host, self.port), timeout=self.timeout):
-                    logger.info(f"Host: {host}")
-                    active_hosts.append(str(host))
-            except (socket.timeout, ConnectionRefusedError):
-                inactive_hosts.append(host)
-
-        logger.info(f"Active hosts: {active_hosts}")
-
-        return active_hosts
 
     def get_certificate_info(self, ip_address, port=443):
         """
@@ -261,8 +234,7 @@ class SnolabNetwork:
             subject = "Cheers! No certificates are expiring within 45 days."
         else:
             subject = f"Alert! Certificates are expiring in the next {n} days."
-        Email(buf=buffer).send_email(sender=config.EMAIL_USERNAME,
-                                     receiver="maazsabahuddin@gmail.com", subject=subject)
+        Email(buf=buffer).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO, subject=subject)
 
 
 class Report:
