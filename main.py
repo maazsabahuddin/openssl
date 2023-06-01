@@ -146,56 +146,46 @@ class SnolabNetwork:
         :param hosts:
         :return:
         """
-        logger.info("Fetching Certificates on each host through out the network.")
+        logger.info("Fetching Certificates on each host throughout the network.")
         today_date = datetime.today().date()
-        active_certificates = []
-        expired_certificates = []
-        expiring_soon_45certificates = []
-        expiring_soon_30certificates = []
-        expiring_soon_15certificates = []
-        expiring_soon_7certificates = []
-        exception_certificates = []
+        certificate_groups = {
+            'active_certificates': [],
+            'expired_certificates': [],
+            'expiring_soon_45certificates': [],
+            'expiring_soon_30certificates': [],
+            'expiring_soon_15certificates': [],
+            'expiring_soon_7certificates': [],
+            'exception_certificates': []
+        }
+
         for host in hosts:
+            logger.info(f"Fetching Certificates for host {host}")
             cert_info, error = self.get_certificate_info(host)
             if cert_info is not None:
                 cert_info['host'] = host
                 cert_info['issuer'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['issuer'])
                 cert_info['subject'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['subject'])
-                certificate_expiring_date = SnolabNetwork.convert_string_date_to_date_format(_date=cert_info['notAfter'])
+                certificate_expiring_date = SnolabNetwork.convert_string_date_to_date_format(
+                    _date=cert_info['notAfter'])
                 cert_expiring_days = (certificate_expiring_date - today_date).days
 
                 if certificate_expiring_date <= today_date:
-                    expired_certificates.append(cert_info)
-                elif cert_expiring_days <= 7:
-                    cert_info['expiring_in'] = cert_expiring_days
-                    expiring_soon_7certificates.append(cert_info)
-                    active_certificates.append(cert_info)
-                elif cert_expiring_days <= 15:
-                    cert_info['expiring_in'] = cert_expiring_days
-                    expiring_soon_15certificates.append(cert_info)
-                    active_certificates.append(cert_info)
-                elif cert_expiring_days <= 30:
-                    cert_info['expiring_in'] = cert_expiring_days
-                    expiring_soon_30certificates.append(cert_info)
-                    active_certificates.append(cert_info)
-                elif cert_expiring_days <= 45:
-                    cert_info['expiring_in'] = cert_expiring_days
-                    expiring_soon_45certificates.append(cert_info)
-                    active_certificates.append(cert_info)
+                    certificate_groups['expired_certificates'].append(cert_info)
                 else:
-                    active_certificates.append(cert_info)
+                    cert_info['expiring_in'] = cert_expiring_days
+                    if cert_expiring_days <= 7:
+                        certificate_groups['expiring_soon_7certificates'].append(cert_info)
+                    elif cert_expiring_days <= 15:
+                        certificate_groups['expiring_soon_15certificates'].append(cert_info)
+                    elif cert_expiring_days <= 30:
+                        certificate_groups['expiring_soon_30certificates'].append(cert_info)
+                    elif cert_expiring_days <= 45:
+                        certificate_groups['expiring_soon_45certificates'].append(cert_info)
+                    certificate_groups['active_certificates'].append(cert_info)
             else:
-                exception_certificates.append({
-                    host: error
-                })
+                certificate_groups['exception_certificates'].append({host: error})
 
-        self.certificates_information.update({'active_certificates': active_certificates,
-                                              'expired_certificates': expired_certificates,
-                                              f'expiring_soon_45certificates': expiring_soon_45certificates,
-                                              f'expiring_soon_30certificates': expiring_soon_30certificates,
-                                              f'expiring_soon_15certificates': expiring_soon_15certificates,
-                                              f'expiring_soon_7certificates': expiring_soon_7certificates,
-                                              'exception_certificates': exception_certificates})
+        self.certificates_information.update(certificate_groups)
         return self.certificates_information
 
     @staticmethod
