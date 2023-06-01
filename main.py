@@ -144,40 +144,39 @@ class SnolabNetwork:
         """
         return datetime.strptime(_date, '%b %d %H:%M:%S %Y %Z').date()
 
-    def update_certificate_groups(self, hosts, certificate_groups):
+    def update_certificate_groups(self, host, certificate_groups):
         """
         This function will update different types of certificates on reference.
-        :param hosts:
+        :param host:
         :param certificate_groups:
         :return:
         """
         today_date = datetime.today().date()
-        for host in hosts:
-            logger.info(f"Fetching Certificates for host {host}")
-            cert_info, error = self.get_certificate_info(host)
-            if cert_info is not None:
-                cert_info['host'] = host
-                cert_info['issuer'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['issuer'])
-                cert_info['subject'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['subject'])
-                certificate_expiring_date = SnolabNetwork.convert_string_date_to_date_format(
-                    _date=cert_info['notAfter'])
-                cert_expiring_days = (certificate_expiring_date - today_date).days
+        logger.info(f"Fetching Certificates for host {host}")
+        cert_info, error = self.get_certificate_info(host)
+        if cert_info is not None:
+            cert_info['host'] = host
+            cert_info['issuer'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['issuer'])
+            cert_info['subject'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['subject'])
+            certificate_expiring_date = SnolabNetwork.convert_string_date_to_date_format(
+                _date=cert_info['notAfter'])
+            cert_expiring_days = (certificate_expiring_date - today_date).days
 
-                cert_info['expiring_in'] = cert_expiring_days
-                if cert_expiring_days <= 7:
-                    certificate_groups['expiring_soon_7certificates'].append(cert_info)
-                elif cert_expiring_days <= 15:
-                    certificate_groups['expiring_soon_15certificates'].append(cert_info)
-                elif cert_expiring_days <= 30:
-                    certificate_groups['expiring_soon_30certificates'].append(cert_info)
-                elif cert_expiring_days <= 45:
-                    certificate_groups['expiring_soon_45certificates'].append(cert_info)
-                certificate_groups['active_certificates'].append(cert_info)
-            else:
-                certificate_groups['exception_certificates'].append(error) if error['type'] != "SSL" \
-                    else certificate_groups['expired_certificates'].append(error) \
-                    if error['obj'].reason == "CERTIFICATE_VERIFY_FAILED" and error['obj'].verify_code == 10 \
-                    else certificate_groups['exception_certificates'].append(error)
+            cert_info['expiring_in'] = cert_expiring_days
+            if cert_expiring_days <= 7:
+                certificate_groups['expiring_soon_7certificates'].append(cert_info)
+            elif cert_expiring_days <= 15:
+                certificate_groups['expiring_soon_15certificates'].append(cert_info)
+            elif cert_expiring_days <= 30:
+                certificate_groups['expiring_soon_30certificates'].append(cert_info)
+            elif cert_expiring_days <= 45:
+                certificate_groups['expiring_soon_45certificates'].append(cert_info)
+            certificate_groups['active_certificates'].append(cert_info)
+        else:
+            certificate_groups['exception_certificates'].append(error) if error['type'] != "SSL" \
+                else certificate_groups['expired_certificates'].append(error) \
+                if error['obj'].reason == "CERTIFICATE_VERIFY_FAILED" and error['obj'].verify_code == 10 \
+                else certificate_groups['exception_certificates'].append(error)
 
         self.certificates_information.update(certificate_groups)
 
@@ -198,7 +197,10 @@ class SnolabNetwork:
             'exception_certificates': []
         }
 
-        self.update_certificate_groups(hosts=hosts, certificate_groups=certificate_groups)
+        for host in hosts:
+            self.update_certificate_groups(host=host, certificate_groups=certificate_groups)
+
+        logger.info("Fetching certificates information completed.")
         return self.certificates_information
 
     @staticmethod
@@ -240,23 +242,27 @@ class SnolabNetwork:
         return "Cheers! No certificates are expiring within 45 days." if not n else \
             f"Alert! Certificates are expiring in the next {n} days."
 
-    def generate_report(self):
+    def generate_report_and_send_email(self):
         """
-        This function will generate the report based on the data.
+        This function will generate the report based on the data and send the report ot the user.
         :return:
         """
         buffer = BytesIO()
+        logger.info("Generating the report")
         p = canvas.Canvas(buffer, pagesize=letter)
         report_obj = Report(p=p)
         report_obj.design_header(date=datetime.today().date())
         report_obj.design_body(data=self.certificates_information)
         report_obj.design_footer()
+        logger.info("Saving the report")
         report_obj.save_report()
         buffer.seek(0)
 
+        logger.info(f"Sending email to: {config.EMAIL_SENT_TO}")
         Email(buf=buffer).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO,
                                      subject=SnolabNetwork.get_email_subject(cert_info=self.certificates_information),
                                      body=SnolabNetwork.get_email_body())
+        logger.info(f"Email successfully sent.")
 
 
 class Report:
@@ -429,4 +435,4 @@ if __name__ == '__main__':
     sn.fetch_certificates(hosts=active_hosts)
 
     # and then generate a report based on it.
-    sn.generate_report()
+    sn.generate_report_and_send_email()
