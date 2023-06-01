@@ -119,8 +119,12 @@ class SnolabNetwork:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
                     cert = ssock.getpeercert()
                     return cert, None
-        except (socket.gaierror, ConnectionRefusedError, ssl.SSLError, Exception) as err:
-            return None, err
+        # except ssl.SSLCertVerificationError as err:
+        #     return None, err
+        except (ssl.SSLError, ssl.SSLCertVerificationError) as err:
+            return None, {'obj': err, 'type': 'SSL'}
+        except (ConnectionRefusedError, TimeoutError, FileNotFoundError, socket.gaierror, Exception) as err:
+            return None, {'obj': err, 'type': 'General'}
 
     @staticmethod
     def convert_tuple_into_dict(_tuple):
@@ -140,24 +144,14 @@ class SnolabNetwork:
         """
         return datetime.strptime(_date, '%b %d %H:%M:%S %Y %Z').date()
 
-    def fetch_certificates(self, hosts):
+    def update_certificate_groups(self, hosts, certificate_groups):
         """
-        This function will fetch host certificate info if there is no exception.
+        This function will update different types of certificates on reference.
         :param hosts:
+        :param certificate_groups:
         :return:
         """
-        logger.info("Fetching Certificates on each host throughout the network.")
         today_date = datetime.today().date()
-        certificate_groups = {
-            'active_certificates': [],
-            'expired_certificates': [],
-            'expiring_soon_45certificates': [],
-            'expiring_soon_30certificates': [],
-            'expiring_soon_15certificates': [],
-            'expiring_soon_7certificates': [],
-            'exception_certificates': []
-        }
-
         for host in hosts:
             logger.info(f"Fetching Certificates for host {host}")
             cert_info, error = self.get_certificate_info(host)
@@ -169,23 +163,42 @@ class SnolabNetwork:
                     _date=cert_info['notAfter'])
                 cert_expiring_days = (certificate_expiring_date - today_date).days
 
-                if certificate_expiring_date <= today_date:
-                    certificate_groups['expired_certificates'].append(cert_info)
-                else:
-                    cert_info['expiring_in'] = cert_expiring_days
-                    if cert_expiring_days <= 7:
-                        certificate_groups['expiring_soon_7certificates'].append(cert_info)
-                    elif cert_expiring_days <= 15:
-                        certificate_groups['expiring_soon_15certificates'].append(cert_info)
-                    elif cert_expiring_days <= 30:
-                        certificate_groups['expiring_soon_30certificates'].append(cert_info)
-                    elif cert_expiring_days <= 45:
-                        certificate_groups['expiring_soon_45certificates'].append(cert_info)
-                    certificate_groups['active_certificates'].append(cert_info)
+                cert_info['expiring_in'] = cert_expiring_days
+                if cert_expiring_days <= 7:
+                    certificate_groups['expiring_soon_7certificates'].append(cert_info)
+                elif cert_expiring_days <= 15:
+                    certificate_groups['expiring_soon_15certificates'].append(cert_info)
+                elif cert_expiring_days <= 30:
+                    certificate_groups['expiring_soon_30certificates'].append(cert_info)
+                elif cert_expiring_days <= 45:
+                    certificate_groups['expiring_soon_45certificates'].append(cert_info)
+                certificate_groups['active_certificates'].append(cert_info)
             else:
-                certificate_groups['exception_certificates'].append({host: error})
+                certificate_groups['exception_certificates'].append(error) if error['type'] != "SSL" \
+                    else certificate_groups['expired_certificates'].append(error) \
+                    if error['obj'].reason == "CERTIFICATE_VERIFY_FAILED" and error['obj'].verify_code == 10 \
+                    else certificate_groups['exception_certificates'].append(error)
 
         self.certificates_information.update(certificate_groups)
+
+    def fetch_certificates(self, hosts):
+        """
+        This function will fetch host certificate info if there is no exception.
+        :param hosts:
+        :return:
+        """
+        logger.info("Fetching Certificates on each host throughout the network.")
+        certificate_groups = {
+            'active_certificates': [],
+            'expired_certificates': [],
+            'expiring_soon_45certificates': [],
+            'expiring_soon_30certificates': [],
+            'expiring_soon_15certificates': [],
+            'expiring_soon_7certificates': [],
+            'exception_certificates': []
+        }
+
+        self.update_certificate_groups(hosts=hosts, certificate_groups=certificate_groups)
         return self.certificates_information
 
     @staticmethod
@@ -201,6 +214,32 @@ class SnolabNetwork:
         except socket.herror:
             return None
 
+    @staticmethod
+    def get_email_body():
+        """
+        This function will return the body of the email
+        :return:
+        """
+        return "Please find the attached PDF report that shows which certificates are expiring.\n\n" \
+               f"The report specifically focuses on the following networks: {config.SNOLAB_NETWORKS}\n\n" \
+               "Please note that this is an automated email. Please DO NOT reply to this email."
+
+    @staticmethod
+    def get_email_subject(cert_info):
+        """
+        This function will return the subject for the email
+        :param cert_info:
+        :return:
+        """
+        n = 7 if len(cert_info[f'expiring_soon_{7}certificates']) > 0 \
+            else 15 if len(cert_info[f'expiring_soon_{15}certificates']) > 0 \
+            else 30 if len(cert_info[f'expiring_soon_{30}certificates']) > 0 \
+            else 45 if len(cert_info[f'expiring_soon_{45}certificates']) > 0 \
+            else None
+
+        return "Cheers! No certificates are expiring within 45 days." if not n else \
+            f"Alert! Certificates are expiring in the next {n} days."
+
     def generate_report(self):
         """
         This function will generate the report based on the data.
@@ -215,16 +254,9 @@ class SnolabNetwork:
         report_obj.save_report()
         buffer.seek(0)
 
-        n = 7 if len(self.certificates_information[f'expiring_soon_{7}certificates']) > 0 \
-            else 15 if len(self.certificates_information[f'expiring_soon_{15}certificates']) > 0 \
-            else 30 if len(self.certificates_information[f'expiring_soon_{30}certificates']) > 0 \
-            else 45 if len(self.certificates_information[f'expiring_soon_{45}certificates']) > 0 \
-            else None
-        if not n:
-            subject = "Cheers! No certificates are expiring within 45 days."
-        else:
-            subject = f"Alert! Certificates are expiring in the next {n} days."
-        Email(buf=buffer).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO, subject=subject)
+        Email(buf=buffer).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO,
+                                     subject=SnolabNetwork.get_email_subject(cert_info=self.certificates_information),
+                                     body=SnolabNetwork.get_email_body())
 
 
 class Report:
@@ -357,12 +389,13 @@ class Email:
     def __init__(self, buf):
         self.buffer = buf
 
-    def send_email(self, sender, receiver, subject):
+    def send_email(self, sender, receiver, subject, body):
         """
         This function will email to the specified receiver.
         :param sender:
         :param receiver:
         :param subject:
+        :param body:
         :return:
         """
         # Create the email message
@@ -371,11 +404,7 @@ class Email:
         message["From"] = sender
         message["To"] = receiver
 
-        body_text = "Please find the attached PDF report that shows which certificates are expiring.\n\n" \
-                    f"The report specifically focuses on the following networks: {config.SNOLAB_NETWORKS}\n\n" \
-                    f"Please note that this is an automated email. Please DO NOT reply to this email."
-        body = MIMEText(body_text)
-        message.attach(body)
+        message.attach(MIMEText(body))
 
         attachment = MIMEApplication(self.buffer.read(), _subtype="pdf")
         attachment.add_header("Content-Disposition", "attachment",
