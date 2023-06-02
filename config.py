@@ -14,8 +14,7 @@ LETS_ENCRYPT = "Let's Encrypt"
 DIGI_CERT = "DigiCert Inc"
 
 # Email Configuration
-SMTP_SERVER = "smtp.office365.com"
-SMTP_PORT = 587
+SMTP_PORT = 25
+SMTP_SERVER = os.environ[f"SMTP_SERVER"]
 EMAIL_USERNAME = os.environ[f"EMAIL_USERNAME"]
-EMAIL_PASSWORD = os.environ[f"EMAIL_PASSWORD"]
 EMAIL_SENT_TO = os.environ["EMAIL_SENT_TO"]

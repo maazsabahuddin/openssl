@@ -390,7 +390,6 @@ class Email:
     smtp_server = config.SMTP_SERVER
     smtp_port = config.SMTP_PORT
     username = config.EMAIL_USERNAME
-    password = config.EMAIL_PASSWORD
 
     def __init__(self, buf):
         self.buffer = buf
@@ -417,11 +416,11 @@ class Email:
                               filename=f"expiring-certificates-{datetime.today().date()}.pdf")
         message.attach(attachment)
 
-        # Send the email
         with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-            server.starttls()
-            server.login(self.username, self.password)
-            server.send_message(message)
+            # Send the email
+            server.sendmail(message["From"], message["To"], message.as_string())
+            # Close the connection to the SMTP server
+            server.quit()
 
 
 if __name__ == '__main__':
