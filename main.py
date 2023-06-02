@@ -5,6 +5,7 @@ Author: Maaz Sabah Uddin
 
 # Python Imports
 import socket
+import time
 import ipaddress
 import threading
 import ssl
@@ -29,7 +30,7 @@ class SSLConnection:
 
     networks = None
     port = 443
-    timeout = 1
+    timeout = 2
     active_hosts = []
 
     def __init__(self, nws, port=443):
@@ -81,9 +82,9 @@ class SSLConnection:
         This function will return all the networks public and private networks within the SNOLAB.
         :return:
         """
-        return [subnet for nw in self.networks if SSLConnection.is_private_network(nw) for subnet in
-                SSLConnection.split_network(nw=nw)] + [ipaddress.ip_network(nw) for nw in self.networks if
-                                                       not SSLConnection.is_private_network(nw)]
+        return [ipaddress.ip_network(nw) for nw in self.networks if not SSLConnection.is_private_network(nw)] + \
+            [subnet for nw in self.networks if SSLConnection.is_private_network(nw)
+             for subnet in SSLConnection.split_network(nw=nw)]
 
     def get_active_hosts(self):
         """
@@ -425,13 +426,22 @@ class Email:
 
 if __name__ == '__main__':
 
-    ssl_conn = SSLConnection(nws=config.SNOLAB_NETWORKS)
+    # Start time
+    start_time = time.time()
+
     # Retrieve all the active hosts of the SNOLAB Public and Private Network
+    ssl_conn = SSLConnection(nws=config.SNOLAB_NETWORKS)
     active_hosts = ssl_conn.get_active_hosts()
 
-    sn = SnolabNetwork()
     # Fetch all the certificates that are expired
+    sn = SnolabNetwork()
     sn.fetch_certificates(hosts=active_hosts)
 
-    # and then generate a report based on it.
+    # Generate the report and send the email.
     sn.generate_report_and_send_email()
+
+    # End time
+    end_time = time.time()
+
+    # Print the elapsed time in seconds
+    logger.info(f"Elapsed time: { end_time - start_time} seconds")
