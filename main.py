@@ -4,6 +4,7 @@ Author: Maaz Sabah Uddin
 """
 
 # Python Imports
+import os
 import socket
 import time
 import ipaddress
@@ -281,7 +282,7 @@ class Report:
         :return:
         """
 
-        logo_path = 'images/SNOLAB-logo.png'  # Replace with the actual path to your logo file
+        logo_path = os.path.abspath('images/SNOLAB-logo.png')  # Replace with the actual path to your logo file
         self.p.drawImage(logo_path, 50, 720, 80, 50)  # Adjust x, y, width, height as needed
 
         # Draw the horizontal line
