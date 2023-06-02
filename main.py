@@ -121,12 +121,10 @@ class SnolabNetwork:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
                     cert = ssock.getpeercert()
                     return cert, None
-        # except ssl.SSLCertVerificationError as err:
-        #     return None, err
         except (ssl.SSLError, ssl.SSLCertVerificationError) as err:
-            return None, {'obj': err, 'type': 'SSL'}
+            return None, {'obj': err, 'type': 'SSL', 'hostname': host, 'host': ip_address}
         except (ConnectionRefusedError, TimeoutError, FileNotFoundError, socket.gaierror, Exception) as err:
-            return None, {'obj': err, 'type': 'General'}
+            return None, {'obj': err, 'type': 'General', 'hostname': host, 'host': ip_address}
 
     @staticmethod
     def convert_tuple_into_dict(_tuple):
@@ -249,85 +247,115 @@ class SnolabNetwork:
         This function will generate the report based on the data and send the report ot the user.
         :return:
         """
-        buffer = BytesIO()
-        logger.info("Generating the report")
-        p = canvas.Canvas(buffer, pagesize=letter)
-        report_obj = Report(p=p)
-        report_obj.design_header(date=datetime.today().date())
-        report_obj.design_body(data=self.certificates_information)
-        report_obj.design_footer()
-        logger.info("Saving the report")
-        report_obj.save_report()
-        buffer.seek(0)
+        attachments = [Report().generate_expiring_soon_certificate_report(
+            certificates_information=self.certificates_information)
+        ]
+
+        if get_all_certificates_info():
+            attachments.append(Report().generate_all_certificates_report(
+                certificates_information=self.certificates_information)
+            )
 
         logger.info(f"Sending email to: {config.EMAIL_SENT_TO}")
-        Email(buf=buffer).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO,
-                                     subject=SnolabNetwork.get_email_subject(cert_info=self.certificates_information),
-                                     body=SnolabNetwork.get_email_body())
+        Email(pdfs=attachments).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO,
+                                           subject=
+                                           SnolabNetwork.get_email_subject(cert_info=self.certificates_information),
+                                           body=SnolabNetwork.get_email_body())
         logger.info(f"Email successfully sent.")
 
 
 class Report:
 
-    p = None
     page_counter = 0
 
-    def __init__(self, p):
-        self.p = p
+    def __init__(self):
+        pass
 
-    def design_header(self, date):
+    @staticmethod
+    def design_header(p, heading):
         """
         This function is responsible to design header of the Emanation Result report.
-        :param date:
+        :param p:
+        :param heading:
         :return:
         """
-
+        date = datetime.today().date()
         logo_path = os.path.abspath('images/SNOLAB-logo.png')  # Replace with the actual path to your logo file
-        self.p.drawImage(logo_path, 50, 720, 80, 50)  # Adjust x, y, width, height as needed
+        p.drawImage(logo_path, 50, 720, 80, 50)  # Adjust x, y, width, height as needed
 
         # Draw the horizontal line
-        self.p.line(20, 700, 592, 700)
+        p.line(20, 700, 592, 700)
 
         # Set header
-        self.p.setFont("Helvetica-Bold", enums.Report.HEADER_FONT_SIZE)
-        self.p.drawString(190, 730, "Expiring Certificates Report")
+        p.setFont("Helvetica-Bold", enums.Report.HEADER_FONT_SIZE)
+        p.drawString(190, 730, f"{heading}")
 
-        self.p.setFont("Helvetica", enums.Report.BODY_FONT_SIZE)
-        self.p.drawString(470, 730, f"Date: {date}")
+        p.setFont("Helvetica", enums.Report.BODY_FONT_SIZE)
+        p.drawString(470, 730, f"Date: {date}")
 
-    def design_body(self, data):
+    def generate_all_certs_body(self, p, certificates):
         """
-        This function will generate the body for the report.
-        :param data:
+        This function will generate the all certificates body.
+        :param p:
+        :param certificates:
         :return:
         """
-        self.certificates_expiring_in_n_days(certificates=data[f'expiring_soon_{7}certificates'], n=7)
-        self.certificates_expiring_in_n_days(certificates=data[f'expiring_soon_{15}certificates'], n=15,
-                                             second_page=True)
-        self.certificates_expiring_in_n_days(certificates=data[f'expiring_soon_{30}certificates'], n=30,
-                                             second_page=True)
-        self.certificates_expiring_in_n_days(certificates=data[f'expiring_soon_{45}certificates'], n=45,
-                                             second_page=True, is_last=True)
+        y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH
 
-    def design_footer(self):
+        for cert in certificates:
+
+            if y_axis_initial_length - 35 < 60:
+                self.design_footer(p=p)
+                p.showPage()
+                y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH + 50
+
+            p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                         f"Host {cert['hostname']} ({cert['host']})")
+            y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
+            p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                         f"Host {cert['obj']}")
+
+            y_axis_initial_length -= (enums.Report.Y_AXIS_INITIAL_DIFFERENCE * 2)
+
+    def design_body(self, p, data, regular=True):
+        """
+        This function will generate the body for the report.
+        :param p:
+        :param data:
+        :param regular:
+        :return:
+        """
+        if not regular:
+            self.generate_all_certs_body(p=p, certificates=data['exception_certificates'])
+        else:
+            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{7}certificates'], n=7)
+            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{15}certificates'], n=15,
+                                                 second_page=True)
+            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{30}certificates'], n=30,
+                                                 second_page=True)
+            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{45}certificates'], n=45,
+                                                 second_page=True, is_last=True)
+
+    def design_footer(self, p):
         """
         This function is responsible to design footer for the report.
         :return:
         """
 
         # Draw the horizontal line
-        self.p.line(20, 35, 592, 35)
+        p.line(20, 35, 592, 35)
 
         # Set footer
-        self.p.setFont("Helvetica", enums.Report.FOOTER_FONT_SIZE)
-        self.p.drawString(enums.Report.X_AXIS_START_POINT, 15,
-                          f"Copyright {datetime.today().date().year} SNOLAB. All rights reserved")
+        p.setFont("Helvetica", enums.Report.FOOTER_FONT_SIZE)
+        p.drawString(enums.Report.X_AXIS_START_POINT, 15,
+                     f"Copyright {datetime.today().date().year} SNOLAB. All rights reserved")
         self.page_counter += 1
-        self.p.drawString(540, 15, f"Page {self.page_counter}")
+        p.drawString(540, 15, f"Page {self.page_counter}")
 
-    def certificates_expiring_in_n_days(self, certificates, n: int, second_page=False, is_last=False):
+    def certificates_expiring_in_n_days(self, p, certificates, n: int, second_page=False, is_last=False):
         """
         This function will update the body for the certificates expiring in n days.
+        :param p:
         :param certificates:
         :param n:
         :param second_page:
@@ -335,66 +363,103 @@ class Report:
         :return:
         """
         # Set body header
-        self.p.setFont("Helvetica-Bold", enums.Report.HEADER_FONT_SIZE)
+        p.setFont("Helvetica-Bold", enums.Report.HEADER_FONT_SIZE)
         y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH \
             if not second_page else enums.Report.Y_AXIS_INITIAL_LENGTH + 50
-        self.p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Certificates Expiring in {n} days")
+        p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Certificates Expiring in {n} days")
 
         # Setting body font
-        self.p.setFont("Helvetica", enums.Report.BODY_FONT_SIZE)
+        p.setFont("Helvetica", enums.Report.BODY_FONT_SIZE)
 
         y_axis_initial_length -= (enums.Report.Y_AXIS_INITIAL_DIFFERENCE * 2)
 
         if len(certificates) < 1:
-            self.p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                              f"No certificates are expiring in the next {n} days.")
+            p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                         f"No certificates are expiring in the next {n} days.")
         else:
             for exp_cert in certificates:
 
                 if y_axis_initial_length - 35 < 60:
-                    self.design_footer()
-                    self.p.showPage()
+                    self.design_footer(p=p)
+                    p.showPage()
                     y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH + 50
 
-                self.p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                                  f"Host {exp_cert['subject']['commonName']} ({exp_cert['host']})")
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                             f"Host {exp_cert['subject']['commonName']} ({exp_cert['host']})")
 
                 y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
-                self.p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                                  f"Issuer {exp_cert['issuer']['organizationName']}")
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                             f"Issuer {exp_cert['issuer']['organizationName']}")
 
                 y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
-                self.p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                                  f"Expiring On {exp_cert['notAfter']}")
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                             f"Expiring On {exp_cert['notAfter']}")
 
                 y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
-                self.p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                                  f"Days Remaining {exp_cert['expiring_in']} days")
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                             f"Days Remaining {exp_cert['expiring_in']} days")
 
                 y_axis_initial_length -= (enums.Report.Y_AXIS_INITIAL_DIFFERENCE * 2)
 
         if not is_last:
-            self.design_footer()
-            self.p.showPage()
+            self.design_footer(p=p)
+            p.showPage()
 
-    def save_report(self):
+    def generate_expiring_soon_certificate_report(self, certificates_information):
         """
-        This function will save the report
+        This function will generate the expiring soon report.
+        :param certificates_information:
         :return:
         """
-        self.p.save()
+        logger.info("Generating the expiring soon report")
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        Report.design_header(p=p, heading="Certificates Expiring Report")
+        self.design_body(p=p, data=certificates_information)
+        self.design_footer(p=p)
+        logger.info("Saving the report")
+        Report.save_report(p=p)
+        buffer.seek(0)
+
+        return {'value': buffer.getvalue(), 'name': f"expiring-certificates-{datetime.today().date()}.pdf"}
+
+    def generate_all_certificates_report(self, certificates_information):
+        """
+        This function will return the information for all the certificates.
+        :param certificates_information:
+        :return:
+        """
+        logger.info("Generating the expiring soon report")
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        Report.design_header(p=p, heading="Certificates Exception Report")
+        self.design_body(p=p, data=certificates_information, regular=False)
+        self.design_footer(p=p)
+        logger.info("Saving the report")
+        Report.save_report(p=p)
+        buffer.seek(0)
+
+        return {'value': buffer.getvalue(), 'name': f"all-certificates-report.pdf"}
+
+    @staticmethod
+    def save_report(p):
+        """
+        This function will save the report.
+        :param p:
+        :return:
+        """
+        p.save()
 
 
 class Email:
 
     # Email configuration
-    buffer = None
     smtp_server = config.SMTP_SERVER
     smtp_port = config.SMTP_PORT
     username = config.EMAIL_USERNAME
 
-    def __init__(self, buf):
-        self.buffer = buf
+    def __init__(self, pdfs):
+        self.pdfs = pdfs
 
     def send_email(self, sender, receiver, subject, body):
         """
@@ -413,16 +478,36 @@ class Email:
 
         message.attach(MIMEText(body))
 
-        attachment = MIMEApplication(self.buffer.read(), _subtype="pdf")
-        attachment.add_header("Content-Disposition", "attachment",
-                              filename=f"expiring-certificates-{datetime.today().date()}.pdf")
-        message.attach(attachment)
+        for pdf in self.pdfs:
+            attachment = MIMEApplication(pdf['value'], _subtype="pdf")
+            attachment.add_header("Content-Disposition", "attachment", filename=pdf['name'])
+            message.attach(attachment)
 
         with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
             # Send the email
             server.sendmail(message["From"], message["To"], message.as_string())
             # Close the connection to the SMTP server
             server.quit()
+
+
+def get_arguments():
+    """
+    This function will retrieve all the command line arguments.
+    :return:
+    """
+    import sys
+    return sys.argv
+
+
+def get_all_certificates_info():
+    """
+    This function will return a boolean value based on the arguments provided while running the script.
+    :return:
+    """
+    args = get_arguments()
+    if len(args) < 2:
+        return False
+    return args[1] == "--all"
 
 
 if __name__ == '__main__':
