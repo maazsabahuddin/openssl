@@ -446,7 +446,7 @@ class Report:
         :param certificates_information:
         :return:
         """
-        logger.info("Generating the expiring soon report")
+        logger.info("Generating all certificates report including expired and exception.")
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=letter)
         Report.design_header(p=p, heading="Certificates Exception Report")
