@@ -523,8 +523,8 @@ def get_all_certificates_info():
     """
     args = get_arguments()
     if len(args) < 2:
-        return False
-    return args[1] == "--all"
+        return False or True
+    return args[1] == "--all" or True
 
 
 if __name__ == '__main__':
