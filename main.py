@@ -438,7 +438,7 @@ class Report:
         Report.save_report(p=p)
         buffer.seek(0)
 
-        return {'value': buffer.getvalue(), 'name': f"certificates-expiring-report.pdf"}
+        return {'value': buffer.getvalue(), 'name': f"certs-expiring-soon-report.pdf"}
 
     def generate_all_certificates_report(self, certificates_information):
         """
@@ -456,7 +456,7 @@ class Report:
         Report.save_report(p=p)
         buffer.seek(0)
 
-        return {'value': buffer.getvalue(), 'name': f"all-certificates-report.pdf"}
+        return {'value': buffer.getvalue(), 'name': f"all-certs-report.pdf"}
 
     @staticmethod
     def save_report(p):
