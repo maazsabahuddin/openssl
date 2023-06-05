@@ -27,6 +27,15 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
 
+def error_handler(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.exception(f"Error: {e}")
+    return wrapper
+
+
 class SSLConnection:
 
     networks = None
@@ -177,6 +186,7 @@ class SnolabNetwork:
                 else certificate_groups['expired_certificates'].append(error) \
                 if error['obj'].reason == "CERTIFICATE_VERIFY_FAILED" and error['obj'].verify_code == 10 \
                 else certificate_groups['exception_certificates'].append(error)
+            error['obj'] = str(error['obj'])
 
         self.certificates_information.update(certificate_groups)
 
@@ -242,6 +252,7 @@ class SnolabNetwork:
         return "Cheers! No certificates are expiring within 45 days." if not n else \
             f"Alert! Certificates are expiring in the next {n} days."
 
+    @error_handler
     def generate_report_and_send_email(self):
         """
         This function will generate the report based on the data and send the report ot the user.
@@ -257,10 +268,11 @@ class SnolabNetwork:
             )
 
         logger.info(f"Sending email to: {config.EMAIL_SENT_TO}")
-        Email(pdfs=attachments).send_email(sender=config.EMAIL_USERNAME, receiver=config.EMAIL_SENT_TO,
-                                           subject=
-                                           SnolabNetwork.get_email_subject(cert_info=self.certificates_information),
-                                           body=SnolabNetwork.get_email_body())
+        Email(pdfs=attachments)\
+            .send_email(sender=config.EMAIL_USERNAME,
+                        receiver=config.EMAIL_SENT_TO,
+                        subject=SnolabNetwork.get_email_subject(cert_info=self.certificates_information),
+                        body=SnolabNetwork.get_email_body())
         logger.info(f"Email successfully sent.")
 
 
@@ -312,8 +324,13 @@ class Report:
             p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
                          f"Host {cert['hostname']} ({cert['host']})")
             y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
-            p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                         f"Host {cert['obj']}")
+            if len(cert['obj']) > 85:
+                error_obj = cert['obj'].split(']')
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Error {error_obj[0]}")
+                y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"{error_obj[1]}")
+            else:
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Error {cert['obj']}")
 
             y_axis_initial_length -= (enums.Report.Y_AXIS_INITIAL_DIFFERENCE * 2)
 
@@ -326,7 +343,7 @@ class Report:
         :return:
         """
         if not regular:
-            self.generate_all_certs_body(p=p, certificates=data['exception_certificates'])
+            self.generate_all_certs_body(p=p, certificates=data['expired_certificates']+data['exception_certificates'])
         else:
             self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{7}certificates'], n=7)
             self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{15}certificates'], n=15,
@@ -421,7 +438,7 @@ class Report:
         Report.save_report(p=p)
         buffer.seek(0)
 
-        return {'value': buffer.getvalue(), 'name': f"expiring-certificates-{datetime.today().date()}.pdf"}
+        return {'value': buffer.getvalue(), 'name': f"certificates-expiring-report.pdf"}
 
     def generate_all_certificates_report(self, certificates_information):
         """
