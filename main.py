@@ -5,7 +5,6 @@ Author: Maaz Sabah Uddin
 
 # Python Imports
 import sys
-import os
 import socket
 import time
 import ipaddress
@@ -24,6 +23,7 @@ import config
 import enums
 
 # Framework Imports
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
@@ -293,47 +293,18 @@ class Report:
         :return:
         """
         date = datetime.today().date()
-        logo_path = os.path.abspath('images/SNOLAB-logo.png')  # Replace with the actual path to your logo file
-        p.drawImage(logo_path, 50, 720, 80, 50)  # Adjust x, y, width, height as needed
+        # Adjust x, y, width, height as needed
+        p.drawImage(ImageReader(config.REPORT_LOGO_DATA), 50, 720, 80, 50)
 
         # Draw the horizontal line
         p.line(20, 700, 592, 700)
 
         # Set header
         p.setFont("Helvetica-Bold", enums.Report.HEADER_FONT_SIZE)
-        p.drawString(190, 730, f"{heading}")
+        p.drawString(150, 730, f"{heading}")
 
         p.setFont("Helvetica", enums.Report.BODY_FONT_SIZE)
         p.drawString(470, 730, f"Date: {date}")
-
-    def generate_all_certs_body(self, p, certificates):
-        """
-        This function will generate the all certificates body.
-        :param p:
-        :param certificates:
-        :return:
-        """
-        y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH
-
-        for cert in certificates:
-
-            if y_axis_initial_length - 35 < 60:
-                self.design_footer(p=p)
-                p.showPage()
-                y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH + 50
-
-            p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                         f"Host {cert['hostname']} ({cert['host']})")
-            y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
-            if len(cert['obj']) > 85:
-                error_obj = cert['obj'].split(']')
-                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Error {error_obj[0]}")
-                y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
-                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"{error_obj[1]}")
-            else:
-                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Error {cert['obj']}")
-
-            y_axis_initial_length -= (enums.Report.Y_AXIS_INITIAL_DIFFERENCE * 2)
 
     def design_body(self, p, data, regular=True):
         """
@@ -369,6 +340,35 @@ class Report:
                      f"Copyright {datetime.today().date().year} SNOLAB. All rights reserved")
         self.page_counter += 1
         p.drawString(540, 15, f"Page {self.page_counter}")
+
+    def generate_all_certs_body(self, p, certificates):
+        """
+        This function will generate the all certificates body.
+        :param p:
+        :param certificates:
+        :return:
+        """
+        y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH
+
+        for cert in certificates:
+
+            if y_axis_initial_length - 35 < 60:
+                self.design_footer(p=p)
+                p.showPage()
+                y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH + 50
+
+            p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
+                         f"Host {cert['hostname']} ({cert['host']})")
+            y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
+            if len(cert['obj']) > 85:
+                error_obj = cert['obj'].split(']')
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Error {error_obj[0]}")
+                y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"{error_obj[1]}")
+            else:
+                p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Error {cert['obj']}")
+
+            y_axis_initial_length -= (enums.Report.Y_AXIS_INITIAL_DIFFERENCE * 2)
 
     def certificates_expiring_in_n_days(self, p, certificates, n: int, second_page=False, is_last=False):
         """
@@ -432,7 +432,7 @@ class Report:
         logger.info("Generating the expiring soon report")
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=letter)
-        Report.design_header(p=p, heading="Certificates Expiring Report")
+        Report.design_header(p=p, heading="Certificates Expiring Soon Report")
         self.design_body(p=p, data=certificates_information)
         self.design_footer(p=p)
         logger.info("Saving the report")
@@ -450,7 +450,7 @@ class Report:
         logger.info("Generating all certificates report including expired and exception.")
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=letter)
-        Report.design_header(p=p, heading="Certificates Exception Report")
+        Report.design_header(p=p, heading="Certificates with Exception Report")
         self.design_body(p=p, data=certificates_information, regular=False)
         self.design_footer(p=p)
         logger.info("Saving the report")
