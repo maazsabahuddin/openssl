@@ -4,6 +4,7 @@ Author: Maaz Sabah Uddin
 """
 
 # Python Imports
+import sys
 import os
 import socket
 import time
@@ -547,4 +548,5 @@ if __name__ == '__main__':
     end_time = time.time()
 
     # Print the elapsed time in seconds
-    logger.info(f"Elapsed time: { end_time - start_time} seconds")
+    logger.info(f"Elapsed time: {end_time - start_time} seconds")
+    sys.exit(0)
