@@ -34,3 +34,15 @@ def get_logo():
 
 
 REPORT_LOGO_DATA = get_logo()
+
+
+def increase_file_descriptor_limit():
+    """
+    This function is responsible to increase the maximum number of open file descriptors while this script is executing.
+    :return:
+    """
+    import resource
+    # Increase the maximum number of open file descriptors
+    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    new_soft_limit = max(4096, soft_limit)  # Set a new soft limit
+    resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft_limit, hard_limit))

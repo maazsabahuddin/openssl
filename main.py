@@ -27,6 +27,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
+config.increase_file_descriptor_limit()
+
 
 def error_handler(func):
     def wrapper(*args, **kwargs):
@@ -41,7 +43,7 @@ class SSLConnection:
 
     networks = None
     port = 443
-    timeout = 2
+    timeout = 1
     active_hosts = []
 
     def __init__(self, nws, port=443):
@@ -55,14 +57,14 @@ class SSLConnection:
         :return:
         """
         try:
-            if socket.create_connection((host, self.port), timeout=self.timeout):
+            with socket.create_connection((host, self.port), timeout=self.timeout):
                 logger.info(f"Host: {host}")
                 self.active_hosts.append(str(host))
         except (socket.error, socket.timeout, ConnectionRefusedError):
             pass
 
     @staticmethod
-    def split_network(nw, prefix_length=26):
+    def split_network(nw, prefix_length=24):
         """
         This function split the network into smaller subnets
         :param nw: nw is Network
@@ -103,7 +105,6 @@ class SSLConnection:
         and Private networks.
         :return:
         """
-
         _ = [thread.start() or thread.join()
              for thread in [threading.Thread(target=self.scan_subnet, args=(subnet,))
                             for subnet in self.get_all_network_with_subnets()]]
@@ -293,6 +294,7 @@ class Report:
         :return:
         """
         date = datetime.today().date()
+
         # Adjust x, y, width, height as needed
         p.drawImage(ImageReader(config.REPORT_LOGO_DATA), 50, 720, 80, 50)
 
