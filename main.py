@@ -26,8 +26,11 @@ import enums
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
 
-config.increase_file_descriptor_limit()
+if sys.platform.startswith('linux'):
+    config.increase_file_descriptor_limit()
 
 
 def error_handler(func):
@@ -118,6 +121,40 @@ class SnolabNetwork:
     timeout = 0.1
     certificates_information = {}
 
+    @staticmethod
+    def parse_certificate(cert_bytes):
+        """
+        This function is going to parse the certificate based on the requirements
+        :param cert_bytes:
+        :return:
+        """
+
+        # Converting bytes to dict
+        cert = x509.load_der_x509_certificate(cert_bytes, default_backend())
+
+        # Fetching subject attributes
+        subject_attributes = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+        subject = {attr.oid._name: attr.value for attr in subject_attributes}
+
+        # Fetching issuer attributes
+        issuer_attributes = cert.issuer.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+        issuer = {attr.oid._name: attr.value for attr in issuer_attributes}
+        issuer_org_attributes = cert.issuer.get_attributes_for_oid(x509.oid.NameOID.ORGANIZATION_NAME)
+        issuer["organizationName"] = issuer_org_attributes[0].value if issuer_org_attributes else ""
+
+        validity = {
+            "notBefore": cert.not_valid_before,
+            "notAfter": cert.not_valid_after
+        }
+
+        certificate_info = {
+            "subject": subject,
+            "issuer": issuer,
+            "validity": validity,
+        }
+
+        return certificate_info
+
     def get_certificate_info(self, ip_address, port=443):
         """
         This function will return the certificate information of the host on 443 port.
@@ -128,32 +165,16 @@ class SnolabNetwork:
         host = self.get_domain_name(ip_address=ip_address)
         try:
             context = ssl.create_default_context()
-            with socket.create_connection((host, port)) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    cert = ssock.getpeercert()
-                    return cert, None
+            context.check_hostname = False  # Disable hostname verification
+            context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
+            with socket.create_connection((ip_address, port)) as sock:
+                with context.wrap_socket(sock, server_hostname=ip_address) as ssock:
+                    cert = ssock.getpeercert(binary_form=True)
+                    return SnolabNetwork.parse_certificate(cert), None
         except (ssl.SSLError, ssl.SSLCertVerificationError) as err:
             return None, {'obj': err, 'type': 'SSL', 'hostname': host, 'host': ip_address}
         except (ConnectionRefusedError, TimeoutError, FileNotFoundError, socket.gaierror, Exception) as err:
             return None, {'obj': err, 'type': 'General', 'hostname': host, 'host': ip_address}
-
-    @staticmethod
-    def convert_tuple_into_dict(_tuple):
-        """
-        This function will take tuple into dictionary and return a dict.
-        :param _tuple:
-        :return:
-        """
-        return dict((x, y) for index in _tuple for x, y in index)
-
-    @staticmethod
-    def convert_string_date_to_date_format(_date: str):
-        """
-        This function converts the string date into date format
-        :param _date:
-        :return:
-        """
-        return datetime.strptime(_date, '%b %d %H:%M:%S %Y %Z').date()
 
     def update_certificate_groups(self, host, certificate_groups):
         """
@@ -167,14 +188,17 @@ class SnolabNetwork:
         cert_info, error = self.get_certificate_info(host)
         if cert_info is not None:
             cert_info['host'] = host
-            cert_info['issuer'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['issuer'])
-            cert_info['subject'] = SnolabNetwork.convert_tuple_into_dict(_tuple=cert_info['subject'])
-            certificate_expiring_date = SnolabNetwork.convert_string_date_to_date_format(
-                _date=cert_info['notAfter'])
+            certificate_expiring_date = cert_info['validity']['notAfter'].date()
             cert_expiring_days = (certificate_expiring_date - today_date).days
 
             cert_info['expiring_in'] = cert_expiring_days
-            if cert_expiring_days <= 7:
+            if cert_expiring_days < 0:
+                _message = f"The certificate expired on {certificate_expiring_date} " \
+                           f"({abs(cert_expiring_days)} days ago)."
+                cert_info['obj'] = _message
+                cert_info['hostname'] = cert_info['subject']['commonName']
+                certificate_groups['expired_certificates'].append(cert_info)
+            elif cert_expiring_days <= 7:
                 certificate_groups['expiring_soon_7certificates'].append(cert_info)
             elif cert_expiring_days <= 15:
                 certificate_groups['expiring_soon_15certificates'].append(cert_info)
@@ -182,12 +206,10 @@ class SnolabNetwork:
                 certificate_groups['expiring_soon_30certificates'].append(cert_info)
             elif cert_expiring_days <= 45:
                 certificate_groups['expiring_soon_45certificates'].append(cert_info)
-            certificate_groups['active_certificates'].append(cert_info)
+            else:
+                certificate_groups['expiring_soon_certificates'].append(cert_info)
         else:
-            certificate_groups['exception_certificates'].append(error) if error['type'] != "SSL" \
-                else certificate_groups['expired_certificates'].append(error) \
-                if error['obj'].reason == "CERTIFICATE_VERIFY_FAILED" and error['obj'].verify_code == 10 \
-                else certificate_groups['exception_certificates'].append(error)
+            certificate_groups['exception_certificates'].append(error)
             error['obj'] = str(error['obj'])
 
         self.certificates_information.update(certificate_groups)
@@ -200,8 +222,8 @@ class SnolabNetwork:
         """
         logger.info("Fetching Certificates on each host throughout the network.")
         certificate_groups = {
-            'active_certificates': [],
             'expired_certificates': [],
+            'expiring_soon_certificates': [],
             'expiring_soon_45certificates': [],
             'expiring_soon_30certificates': [],
             'expiring_soon_15certificates': [],
@@ -249,6 +271,7 @@ class SnolabNetwork:
             else 15 if len(cert_info[f'expiring_soon_{15}certificates']) > 0 \
             else 30 if len(cert_info[f'expiring_soon_{30}certificates']) > 0 \
             else 45 if len(cert_info[f'expiring_soon_{45}certificates']) > 0 \
+            else 365 if len(cert_info[f'expiring_soon_certificates']) > 0 \
             else None
 
         return "Cheers! No certificates are expiring within 45 days." if not n else \
@@ -325,6 +348,8 @@ class Report:
             self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{30}certificates'], n=30,
                                                  second_page=True)
             self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{45}certificates'], n=45,
+                                                 second_page=True)
+            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_certificates'], n=365,
                                                  second_page=True, is_last=True)
 
     def design_footer(self, p):
@@ -386,7 +411,11 @@ class Report:
         p.setFont("Helvetica-Bold", enums.Report.HEADER_FONT_SIZE)
         y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH \
             if not second_page else enums.Report.Y_AXIS_INITIAL_LENGTH + 50
-        p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, f"Certificates Expiring in {n} days")
+
+        _msg = f"Certificates Expiring in {n}"
+        if n == 365:
+            _msg = f"Certificates Expiring in {n} days or more"
+        p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length, _msg)
 
         # Setting body font
         p.setFont("Helvetica", enums.Report.BODY_FONT_SIZE)
@@ -405,7 +434,7 @@ class Report:
                     y_axis_initial_length = enums.Report.Y_AXIS_INITIAL_LENGTH + 50
 
                 p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                             f"Host {exp_cert['subject']['commonName']} ({exp_cert['host']})")
+                             f"Host {exp_cert['subject'].get('commonName', '')} ({exp_cert['host']})")
 
                 y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
                 p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
@@ -413,7 +442,7 @@ class Report:
 
                 y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
                 p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
-                             f"Expiring On {exp_cert['notAfter']}")
+                             f"Expiring On {exp_cert['validity']['notAfter']}")
 
                 y_axis_initial_length -= enums.Report.Y_AXIS_INITIAL_DIFFERENCE
                 p.drawString(enums.Report.X_AXIS_START_POINT, y_axis_initial_length,
@@ -541,6 +570,8 @@ if __name__ == '__main__':
 
     # Fetch all the certificates that are expired
     sn = SnolabNetwork()
+
+    # Fetching certificates
     sn.fetch_certificates(hosts=active_hosts)
 
     # Generate the report and send the email.
