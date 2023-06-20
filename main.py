@@ -46,7 +46,7 @@ class SSLConnection:
 
     networks = None
     port = 443
-    timeout = 1
+    timeout = 2
     active_hosts = []
 
     def __init__(self, nws, port=443):
@@ -63,7 +63,8 @@ class SSLConnection:
             with socket.create_connection((host, self.port), timeout=self.timeout):
                 logger.info(f"Host: {host}")
                 self.active_hosts.append(str(host))
-        except (socket.error, socket.timeout, ConnectionRefusedError):
+        except (socket.error, socket.timeout, ConnectionRefusedError, Exception) as e:
+            # logger.info(f"Host {host} Error: {e}")
             pass
 
     @staticmethod
@@ -167,7 +168,7 @@ class SnolabNetwork:
             context = ssl.create_default_context()
             context.check_hostname = False  # Disable hostname verification
             context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
-            with socket.create_connection((ip_address, port)) as sock:
+            with socket.create_connection((ip_address, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=ip_address) as ssock:
                     cert = ssock.getpeercert(binary_form=True)
                     return SnolabNetwork.parse_certificate(cert), None
@@ -193,8 +194,9 @@ class SnolabNetwork:
 
             cert_info['expiring_in'] = cert_expiring_days
             if cert_expiring_days < 0:
+                cert_info['expiring_in'] = abs(cert_info['expiring_in'])
                 _message = f"The certificate expired on {certificate_expiring_date} " \
-                           f"({abs(cert_expiring_days)} days ago)."
+                           f"({cert_info['expiring_in']} days ago)."
                 cert_info['obj'] = _message
                 cert_info['hostname'] = cert_info['subject']['commonName']
                 certificate_groups['expired_certificates'].append(cert_info)
@@ -207,7 +209,7 @@ class SnolabNetwork:
             elif cert_expiring_days <= 45:
                 certificate_groups['expiring_soon_45certificates'].append(cert_info)
             else:
-                certificate_groups['expiring_soon_certificates'].append(cert_info)
+                certificate_groups['expiring_soon_365certificates'].append(cert_info)
         else:
             certificate_groups['exception_certificates'].append(error)
             error['obj'] = str(error['obj'])
@@ -223,7 +225,7 @@ class SnolabNetwork:
         logger.info("Fetching Certificates on each host throughout the network.")
         certificate_groups = {
             'expired_certificates': [],
-            'expiring_soon_certificates': [],
+            'expiring_soon_365certificates': [],
             'expiring_soon_45certificates': [],
             'expiring_soon_30certificates': [],
             'expiring_soon_15certificates': [],
@@ -235,7 +237,38 @@ class SnolabNetwork:
             self.update_certificate_groups(host=host, certificate_groups=certificate_groups)
 
         logger.info("Fetching certificates information completed.")
+        self.sort_certs()
         return self.certificates_information
+
+    def sort_certs(self):
+        """
+        This function will be responsible to sort the certificates based on their expiry.
+        :return:
+        """
+        logger.info("Sorting certificates")
+        self.certificates_information['expiring_soon_365certificates'] = \
+            sorted(self.certificates_information['expiring_soon_365certificates'],
+                   key=lambda d: d.get('expiring_in', float('inf')))
+
+        self.certificates_information['expiring_soon_45certificates'] = \
+            sorted(self.certificates_information['expiring_soon_45certificates'],
+                   key=lambda d: d.get('expiring_in', float('inf')))
+
+        self.certificates_information['expiring_soon_30certificates'] = \
+            sorted(self.certificates_information['expiring_soon_30certificates'],
+                   key=lambda d: d.get('expiring_in', float('inf')))
+
+        self.certificates_information['expiring_soon_15certificates'] = \
+            sorted(self.certificates_information['expiring_soon_15certificates'],
+                   key=lambda d: d.get('expiring_in', float('inf')))
+
+        self.certificates_information['expiring_soon_7certificates'] = \
+            sorted(self.certificates_information['expiring_soon_7certificates'],
+                   key=lambda d: d.get('expiring_in', float('inf')))
+
+        self.certificates_information['expired_certificates'] = \
+            sorted(self.certificates_information['expired_certificates'],
+                   key=lambda d: d.get('expiring_in', float('inf')))
 
     @staticmethod
     def get_domain_name(ip_address):
@@ -271,7 +304,6 @@ class SnolabNetwork:
             else 15 if len(cert_info[f'expiring_soon_{15}certificates']) > 0 \
             else 30 if len(cert_info[f'expiring_soon_{30}certificates']) > 0 \
             else 45 if len(cert_info[f'expiring_soon_{45}certificates']) > 0 \
-            else 365 if len(cert_info[f'expiring_soon_certificates']) > 0 \
             else None
 
         return "Cheers! No certificates are expiring within 45 days." if not n else \
@@ -349,7 +381,7 @@ class Report:
                                                  second_page=True)
             self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{45}certificates'], n=45,
                                                  second_page=True)
-            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_certificates'], n=365,
+            self.certificates_expiring_in_n_days(p=p, certificates=data[f'expiring_soon_{365}certificates'], n=365,
                                                  second_page=True, is_last=True)
 
     def design_footer(self, p):
