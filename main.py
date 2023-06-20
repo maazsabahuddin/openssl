@@ -46,7 +46,7 @@ class SSLConnection:
 
     networks = None
     port = 443
-    timeout = 2
+    timeout = 1
     active_hosts = []
 
     def __init__(self, nws, port=443):
@@ -109,9 +109,11 @@ class SSLConnection:
         and Private networks.
         :return:
         """
-        _ = [thread.start() or thread.join()
-             for thread in [threading.Thread(target=self.scan_subnet, args=(subnet,))
-                            for subnet in self.get_all_network_with_subnets()]]
+        for subnet in self.get_all_network_with_subnets():
+            self.scan_subnet(subnet)
+        # _ = [thread.start() or thread.join()
+        #      for thread in [threading.Thread(target=self.scan_subnet, args=(subnet,))
+        #                     for subnet in self.get_all_network_with_subnets()]]
 
         return self.active_hosts
 
@@ -171,7 +173,8 @@ class SnolabNetwork:
             with socket.create_connection((ip_address, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=ip_address) as ssock:
                     cert = ssock.getpeercert(binary_form=True)
-                    return SnolabNetwork.parse_certificate(cert), None
+                    # return SnolabNetwork.parse_certificate(cert), None
+                    return cert, None
         except (ssl.SSLError, ssl.SSLCertVerificationError) as err:
             return None, {'obj': err, 'type': 'SSL', 'hostname': host, 'host': ip_address}
         except (ConnectionRefusedError, TimeoutError, FileNotFoundError, socket.gaierror, Exception) as err:
