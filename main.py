@@ -173,8 +173,7 @@ class SnolabNetwork:
             with socket.create_connection((ip_address, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=ip_address) as ssock:
                     cert = ssock.getpeercert(binary_form=True)
-                    # return SnolabNetwork.parse_certificate(cert), None
-                    return cert, None
+                    return SnolabNetwork.parse_certificate(cert), None
         except (ssl.SSLError, ssl.SSLCertVerificationError) as err:
             return None, {'obj': err, 'type': 'SSL', 'hostname': host, 'host': ip_address}
         except (ConnectionRefusedError, TimeoutError, FileNotFoundError, socket.gaierror, Exception) as err:
@@ -284,7 +283,7 @@ class SnolabNetwork:
             domain_name = socket.gethostbyaddr(ip_address)[0]
             return domain_name
         except socket.herror:
-            return None
+            return ""
 
     @staticmethod
     def get_email_body():
