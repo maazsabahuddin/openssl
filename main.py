@@ -53,18 +53,19 @@ class SSLConnection:
         self.networks = nws
         self.port = port
 
-    def check_port(self, host):
+    def check_port(self, host, port=None):
         """
-        This function is to check whether the host is listening on a port 443.
+        This function is to check whether the host is listening on a port default 443.
         :param host:
+        :param port:
         :return:
         """
         try:
-            with socket.create_connection((host, self.port), timeout=self.timeout):
-                logger.info(f"Host: {host}")
-                self.active_hosts.append(str(host))
+            _port = self.port if not port else port
+            with socket.create_connection((host, _port), timeout=self.timeout):
+                logger.info(f"Host: {host} - Port {_port}")
+                self.active_hosts.append(f"{host}/{_port}")
         except (socket.error, socket.timeout, ConnectionRefusedError, Exception) as e:
-            # logger.info(f"Host {host} Error: {e}")
             pass
 
     @staticmethod
@@ -111,6 +112,12 @@ class SSLConnection:
         """
         for subnet in self.get_all_network_with_subnets():
             self.scan_subnet(subnet)
+
+        for _ in config.CUSTOM_HOSTS_TO_SCAN:
+            host, port = _.split('/')
+            self.check_port(host=host, port=port)
+
+        # Below code is the shorter code with same functionality
         # _ = [thread.start() or thread.join()
         #      for thread in [threading.Thread(target=self.scan_subnet, args=(subnet,))
         #                     for subnet in self.get_all_network_with_subnets()]]
@@ -158,13 +165,13 @@ class SnolabNetwork:
 
         return certificate_info
 
-    def get_certificate_info(self, ip_address, port=443):
+    def get_certificate_info(self, ip_address):
         """
         This function will return the certificate information of the host on 443 port.
         :param ip_address:
-        :param port:
         :return:
         """
+        ip_address, port = ip_address.split('/')
         host = self.get_domain_name(ip_address=ip_address)
         try:
             context = ssl.create_default_context()
@@ -175,9 +182,9 @@ class SnolabNetwork:
                     cert = ssock.getpeercert(binary_form=True)
                     return SnolabNetwork.parse_certificate(cert), None
         except (ssl.SSLError, ssl.SSLCertVerificationError) as err:
-            return None, {'obj': err, 'type': 'SSL', 'hostname': host, 'host': ip_address}
+            return None, {'obj': err, 'type': 'SSL', 'hostname': host, 'host': f"{ip_address}/{port}"}
         except (ConnectionRefusedError, TimeoutError, FileNotFoundError, socket.gaierror, Exception) as err:
-            return None, {'obj': err, 'type': 'General', 'hostname': host, 'host': ip_address}
+            return None, {'obj': err, 'type': 'General', 'hostname': host, 'host': f"{ip_address}/{port}"}
 
     def update_certificate_groups(self, host, certificate_groups):
         """

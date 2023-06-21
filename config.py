@@ -9,6 +9,7 @@ load_dotenv(dotenv_path=dotenv_path)
 
 # SNOLAB Networks
 SNOLAB_NETWORKS = os.environ[f"SNOLAB_NETWORKS"].split(',')
+CUSTOM_HOSTS_TO_SCAN = os.environ[f"CUSTOM_HOSTS_TO_SCAN"].split(',')
 
 # CAs
 LETS_ENCRYPT = "Let's Encrypt"
