@@ -298,9 +298,9 @@ class SnolabNetwork:
         This function will return the body of the email
         :return:
         """
-        networks_hosts = config.SNOLAB_NETWORKS + config.CUSTOM_HOSTS_TO_SCAN
         return "Please find the attached PDF report that shows which certificates are expiring.\n\n" \
-               f"The report specifically focuses on the following networks: {networks_hosts}\n\n" \
+               f"The report specifically focuses on the networks {config.SNOLAB_NETWORKS}, and custom " \
+               f"hosts {config.CUSTOM_HOSTS_TO_SCAN}\n\n" \
                "Please note that this is an automated email. Please DO NOT reply to this email."
 
     @staticmethod
