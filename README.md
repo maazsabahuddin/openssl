@@ -7,7 +7,7 @@ Prerequisites:
 
 HOW TO RUN OR EXECUTE THE SCRIPT
 
-1) Clone the project using the following command: `git clone https://git.snolab.ca/jroberts/certificate-expiry-reminder.git`.
+1) Clone the project using the following command: `git clone https://github.com/maazsabahuddin/openssl.git`.
 2) Enter your username and password, and please make sure you have access to this repository.
 3) After successfully cloning the project, you have to create a virtual environment by typing the following command `python -m venv venv`.
 4) Activate the virtual environment by typing `venv/Scripts/activate` in Windows, and `venv/bin/activate` in Linux.
